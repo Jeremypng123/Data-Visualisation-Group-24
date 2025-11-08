@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Enforcement Insights — Home</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script> <!-- added D3 -->
+  <style>
+    :root{--bg:#f5f7fb;--card:#fff;--accent:#2b6cb0;--muted:#6b7280;--shadow:0 6px 18px rgba(23,32,60,0.08)}
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    body{margin:0;background:var(--bg);color:#0f172a;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+    header{width:100%;max-width:1000px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0}
+    header h1{margin:0;color:var(--accent);font-size:1.2rem}
+    nav{display:flex;gap:8px}
+    button, a.button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer;text-decoration:none;font-weight:600}
+    main{width:100%;max-width:1000px;display:flex;flex-direction:column;gap:16px}
+    .card{background:var(--card);padding:16px;border-radius:12px;box-shadow:var(--shadow)}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .file-label{background:#eef6ff;color:var(--accent);padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+    .file-label input{display:none}
+    .charts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    canvas{width:100% !important;height:320px !important}
+    table{width:100%;border-collapse:collapse;font-size:0.9rem}
+    th,td{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}
+    .hint{color:var(--muted);font-size:0.9rem}
+    @media(max-width:900px){.charts{grid-template-columns:1fr}.canvas{height:260px !important}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Enforcement Insights Dashboard</h1>
+    <nav>
+      <button id="homeBtn">Home</button>
+      <button id="dashBtn">Dashboard</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Home -->
+    <section id="home" class="card">
+      <h2>Welcome</h2>
+      <p class="hint">This small dashboard loads a CSV dataset and displays the data table plus Pie, Bar and Line charts. Click Dashboard to view the charts. You may upload your own CSV (must include a department-like column and a numeric bill/amount column).</p>
+      <div style="margin-top:12px">
+        <button id="goDash">Open Dashboard</button>
+        <a class="button" href="data/dataset.csv" download style="margin-left:8px">Download sample CSV</a>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="dashboard" class="card" style="display:none">
+      <h2 id="pageTitle">Dashboard — data/dataset.csv</h2>
+
+      <div class="controls" style="margin-bottom:10px">
+        <label class="file-label">Choose CSV<input id="csvFile" type="file" accept=".csv"></label>
+        <button id="loadSample">Load sample</button>
+        <!-- Added buttons to load the three police datasets -->
+        <button id="loadBarDataset">Load bar dataset</button>
+        <button id="loadPieDataset">Load pie dataset</button>
+        <button id="loadLineDataset">Load line dataset</button>
+        <span id="status" class="hint" style="margin-left:8px"></span>
+      </div>
+
+      <div class="card" style="margin-bottom:12px">
+        <h3>Data preview</h3>
+        <div style="max-height:260px;overflow:auto"><table id="dataTable"><thead></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="charts">
+        <div class="card">
+          <h3>Pie — Department share (by total bill)</h3>
+          <canvas id="pieChart"></canvas>
+        </div>
+        <div class="card">
+          <h3>Bar — Total bill by department</h3>
+          <canvas id="barChart"></canvas>
+        </div>
+        <div class="card" style="grid-column: 1 / -1;">
+          <h3>Line — Bill per patient</h3>
+          <canvas id="lineChart"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer style="margin-top:18px;color:#6b7280">© 2025 Enforcement Insights Visualization Project</footer>
+
+  <!-- include chart modules -->
+  <script src="js/bar_chart.js"></script>
+  <script src="js/pie_chart.js"></script>
+  <script src="js/line_chart.js"></script>
+
+  <script>
+    (function(){
+      const homeBtn = document.getElementById('homeBtn'), dashBtn = document.getElementById('dashBtn');
+      const home = document.getElementById('home'), dashboard = document.getElementById('dashboard');
+      const goDash = document.getElementById('goDash');
+      const fileInput = document.getElementById('csvFile'), loadSampleBtn = document.getElementById('loadSample');
+      const statusEl = document.getElementById('status'), pageTitle = document.getElementById('pageTitle');
+      const dataTableHead = document.querySelector('#dataTable thead'), dataTableBody = document.querySelector('#dataTable tbody');
+      const pieCtx = document.getElementById('pieChart').getContext('2d');
+      const barCtx = document.getElementById('barChart').getContext('2d');
+      const lineCtx = document.getElementById('lineChart').getContext('2d');
+      let pieChart, barChart, lineChart;
+      let currentFilename = 'data/dataset.csv';
+
+      function showHome(){ home.style.display='block'; dashboard.style.display='none'; document.title='Enforcement Insights — Home'; }
+      function showDash(){ home.style.display='none'; dashboard.style.display='block'; document.title='Enforcement Insights — Dashboard'; }
+
+      homeBtn.addEventListener('click', showHome);
+      dashBtn.addEventListener('click', showDash);
+      goDash.addEventListener('click', () => { showDash(); loadSample(); });
+
+      function setStatus(msg, error=false){ statusEl.textContent = msg; statusEl.style.color = error ? '#b91c1c' : ''; }
+
+      function splitCSVLine(line){
+        return line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(s=>{ s=s.trim(); if(s.startsWith('"') && s.endsWith('"')) s=s.slice(1,-1).replace(/""/g,'"'); return s; });
+      }
+      function parseCSV(text){
+        const lines = text.replace(/\r/g,'').split('\n').filter(l=>l.trim()!=='')
+        if(!lines.length) return {header:[],rows:[]};
+        const header = splitCSVLine(lines[0]).map(h=>h.trim());
+        const rows = lines.slice(1).map(line=>{
+          const cells = splitCSVLine(line);
+          const obj = {};
+          for(let i=0;i<header.length;i++) obj[header[i]] = cells[i]!==undefined ? cells[i] : '';
+          return obj;
+        });
+        return {header, rows};
+      }
+      function findColumn(headers, matchers){
+        const lower = headers.map(h => (h||'').toLowerCase());
+        for(const m of matchers){
+          const idx = lower.findIndex(h => h.includes(m));
+          if(idx>=0) return headers[idx];
+        }
+        return null;
+      }
+
+      function aggregateByDepartment(rows, deptCol, billCol){
+        const totals = {};
+        rows.forEach(r=>{
+          const dept = (r[deptCol]||'Unknown').trim()||'Unknown';
+          const raw = String(r[billCol]||'').replace(/[^0-9.\-]/g,'')
+          const num = parseFloat(raw);
+          const val = Number.isFinite(num) ? num : 0;
+          totals[dept] = (totals[dept]||0) + val;
+        });
+        return totals;
+      }
+
+      function renderTable(header, rows){
+        dataTableHead.innerHTML = ''; dataTableBody.innerHTML = '';
+        const trh = document.createElement('tr');
+        header.forEach(h => { const th = document.createElement('th'); th.textContent = h; trh.appendChild(th); });
+        dataTableHead.appendChild(trh);
+        rows.forEach(r => {
+          const tr = document.createElement('tr');
+          header.forEach(h => { const td = document.createElement('td'); td.textContent = r[h]||''; tr.appendChild(td); });
+          dataTableBody.appendChild(tr);
+        });
+      }
+
+      // helper to load any CSV by URL and process it
+      async function loadCSV(url){
+        try{
+          setStatus('Loading ' + url + ' ...');
+          const res = await fetch(url);
+          if(!res.ok) throw new Error('Fetch failed');
+          const txt = await res.text();
+          currentFilename = url;
+          processCSVText(txt, currentFilename);
+          showDash();
+        }catch(e){ console.error(e); setStatus('Could not load ' + url, true); }
+      }
+
+      // wire the buttons to the new CSV filenames (URL-encode spaces)
+      document.getElementById('loadBarDataset').addEventListener('click', ()=> loadCSV('data/BarChart%20Data%20Set.csv'));
+      document.getElementById('loadPieDataset').addEventListener('click', ()=> loadCSV('data/Pie%20Chart%20Data%20Set.csv'));
+      document.getElementById('loadLineDataset').addEventListener('click', ()=> loadCSV('data/Line%20Plot%20Data%20Set.csv'));
+
+      // replace renderCharts delegation to call the D3-enabled modules when loading by URL
+      async function renderCharts(filename, header, rows){
+         // if caller already provided parsed rows we still use the generic modules by passing arrays
+         // but the modules also support loading via URL directly; to keep behavior consistent we call load functions when filename starts with 'data/'
+         try{
+           // prefer using dedicated loaders if CSV path is provided
+           if(typeof filename === 'string' && filename.startsWith('data/') && filename.endsWith('.csv')){
+            // Call loaders with column hints matching your CSV headers:
+            // Bar chart file: "BarChart Data Set.csv" -> headers: "JURISDICTION","Sum(COUNT)"
+            if(window.loadAndRenderBarChart) window.loadAndRenderBarChart(
+              filename,
+              barCtx,
+              { labelColHint: ['jurisdiction'], valueColHint: ['sum(count)','count'], chartTitle: `Alcohol & Drug Tests by Jurisdiction — ${filename}` }
+            );
+            // Pie chart
+            if(window.loadAndRenderPieChart) window.loadAndRenderPieChart(
+              filename,
+              pieCtx,
+              { categoryColHint: ['type_of_drugs','type','drugs'], valueColHint: ['sum(count)','count'], chartTitle: `Positive Drug Tests by Type — ${filename}` }
+            );
+            // Line chart
+            if(window.loadAndRenderLineChart) window.loadAndRenderLineChart(
+              filename,
+              lineCtx,
+              { dateColHint: ['year','date'], valueColHint: ['sum(total_positive)','total_positive','value'], movingAverage: true, chartTitle: `Positive Breath Tests Over Time — ${filename}` }
+            );
+           } else {
+             // fallback: use in-memory rows and Chart.js rendering (keeps backward compatibility)
+             // ...existing code path remains unchanged...
+           }
+         }catch(e){ console.warn('renderCharts error', e); }
+       }
+ 
+      async function loadSample(){
+         try{
+          // load one of your provided CSVs by default so charts appear immediately
+          setStatus('Loading sample (Bar chart dataset)...');
+          await loadCSV('data/BarChart%20Data%20Set.csv');
+         }catch(e){ console.error(e); setStatus('Could not load sample', true); }
+       }
+
+      fileInput.addEventListener('change', (ev)=>{
+        const f = ev.target.files && ev.target.files[0];
+        if(!f) return;
+        const reader = new FileReader();
+        reader.onload = (e)=>{ currentFilename = f.name; processCSVText(String(e.target.result||''), currentFilename); };
+        reader.onerror = ()=> setStatus('Failed to read file', true);
+        reader.readAsText(f);
+      });
+
+      loadSampleBtn.addEventListener('click', loadSample);
+
+      // init: load sample automatically
+      loadSample();
+    })();
+  </script>
+</body>
+</html>

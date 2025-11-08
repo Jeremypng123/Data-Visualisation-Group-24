@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Enforcement Insights — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* ...use same styles as index.html (kept concise) ... */
+    :root{--bg:#f5f7fb;--card:#fff;--accent:#2b6cb0;--muted:#6b7280;--shadow:0 6px 18px rgba(23,32,60,0.08)}
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    body{margin:0;background:var(--bg);color:#0f172a;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+    header{width:100%;max-width:1000px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0}
+    header h1{margin:0;color:var(--accent);font-size:1.2rem}
+    nav{display:flex;gap:8px}
+    button, a.button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer;text-decoration:none;font-weight:600}
+    main{width:100%;max-width:1000px;display:flex;flex-direction:column;gap:16px}
+    .card{background:var(--card);padding:16px;border-radius:12px;box-shadow:var(--shadow)}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .file-label{background:#eef6ff;color:var(--accent);padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+    .file-label input{display:none}
+    .charts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    canvas{width:100% !important;height:320px !important}
+    table{width:100%;border-collapse:collapse;font-size:0.9rem}
+    th,td{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}
+    .hint{color:var(--muted);font-size:0.9rem}
+    @media(max-width:900px){.charts{grid-template-columns:1fr}.canvas{height:260px !important}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Enforcement Insights Dashboard</h1>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Datasets</h2>
+      <div class="controls">
+        <label class="file-label">Upload CSV<input id="csvFile" type="file" accept=".csv"></label>
+        <button id="btnBar">Load Bar dataset</button>
+        <button id="btnPie">Load Pie dataset</button>
+        <button id="btnLine">Load Line dataset</button>
+        <span id="status" class="hint"></span>
+      </div>
+      <p class="hint">Uses your backjs modules (js/bar_chart.js, js/pie_chart.js, js/line_chart.js). Click a dataset to load and render.</p>
+    </section>
+
+    <section class="card">
+      <h3 id="titlePreview">Data preview</h3>
+      <div style="max-height:260px;overflow:auto">
+        <table id="dataTable"><thead></thead><tbody></tbody></table>
+      </div>
+    </section>
+
+    <section class="charts">
+      <div class="card" id="pieCard">
+        <h3>Pie Chart</h3>
+        <canvas id="pieCanvas"></canvas>
+      </div>
+      <div class="card" id="barCard">
+        <h3>Bar Chart</h3>
+        <canvas id="barCanvas"></canvas>
+      </div>
+      <div class="card" id="lineCard" style="grid-column:1 / -1;">
+        <h3>Line Plot</h3>
+        <canvas id="lineCanvas"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <footer style="margin-top:18px;color:#6b7280">© 2025 Enforcement Insights Visualization Project</footer>
+
+  <!-- reuse existing chart modules -->
+  <script src="js/bar_chart.js"></script>
+  <script src="js/pie_chart.js"></script>
+  <script src="js/line_chart.js"></script>
+
+  <script>
+  (function(){
+    const csvFile = document.getElementById('csvFile');
+    const btnBar = document.getElementById('btnBar');
+    const btnPie = document.getElementById('btnPie');
+    const btnLine = document.getElementById('btnLine');
+    const status = document.getElementById('status');
+    const dataTableHead = document.querySelector('#dataTable thead');
+    const dataTableBody = document.querySelector('#dataTable tbody');
+    const pieCtx = document.getElementById('pieCanvas').getContext('2d');
+    const barCtx = document.getElementById('barCanvas').getContext('2d');
+    const lineCtx = document.getElementById('lineCanvas').getContext('2d');
+    const pieCard = document.getElementById('pieCard');
+    const barCard = document.getElementById('barCard');
+    const lineCard = document.getElementById('lineCard');
+
+    function setStatus(msg, err=false){ status.textContent = msg; status.style.color = err ? '#b91c1c' : ''; }
+
+    async function fetchText(url){
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('Fetch failed: ' + url);
+      return await res.text();
+    }
+
+    function renderTableFromRows(rows){
+      dataTableHead.innerHTML=''; dataTableBody.innerHTML='';
+      if(!rows || !rows.length) return;
+      const headers = Object.keys(rows[0]);
+      const tr = document.createElement('tr');
+      headers.forEach(h => { const th = document.createElement('th'); th.textContent = h; tr.appendChild(th); });
+      dataTableHead.appendChild(tr);
+      rows.forEach(r=>{
+        const trr = document.createElement('tr');
+        headers.forEach(h => { const td = document.createElement('td'); td.textContent = r[h] || ''; trr.appendChild(td); });
+        dataTableBody.appendChild(trr);
+      });
+    }
+
+    function showOnly(type){
+      // type: 'bar' | 'pie' | 'line'
+      pieCard.style.display = (type === 'pie') ? 'block' : 'none';
+      barCard.style.display = (type === 'bar') ? 'block' : 'none';
+      lineCard.style.display = (type === 'line') ? 'block' : 'none';
+    }
+
+    // helpers to call your existing loader APIs with hints matching your CSVs
+    async function loadBar(url){
+      try{
+        setStatus('Loading bar dataset...');
+        const rows = await d3.csv(url);
+        renderTableFromRows(rows);
+        showOnly('bar'); // show only bar chart
+        // hints: JURISDICTION, Sum(COUNT)
+        if(window.loadAndRenderBarChart) window.loadAndRenderBarChart(url, barCtx, {
+          labelColHint:['jurisdiction'],
+          valueColHint:['sum(count)','count'],
+          chartTitle: 'Alcohol & Drug Tests by Jurisdiction (Bar)'
+        });
+        setStatus('Bar dataset loaded: ' + rows.length + ' rows');
+      }catch(e){ console.error(e); setStatus('Failed to load bar dataset', true); }
+    }
+    async function loadPie(url){
+      try{
+        setStatus('Loading pie dataset...');
+        const rows = await d3.csv(url);
+        renderTableFromRows(rows);
+        showOnly('pie'); // show only pie chart
+        if(window.loadAndRenderPieChart) window.loadAndRenderPieChart(url, pieCtx, {
+          categoryColHint:['type_of_drugs','type','drugs'],
+          valueColHint:['sum(count)','count'],
+          chartTitle: 'Positive Drug Tests by Type (Pie)'
+        });
+        setStatus('Pie dataset loaded: ' + rows.length + ' rows');
+      }catch(e){ console.error(e); setStatus('Failed to load pie dataset', true); }
+    }
+    async function loadLine(url){
+      try{
+        setStatus('Loading line dataset...');
+        const rows = await d3.csv(url);
+        renderTableFromRows(rows);
+        showOnly('line'); // show only line chart
+        if(window.loadAndRenderLineChart) window.loadAndRenderLineChart(url, lineCtx, {
+          dateColHint:['year','date'],
+          valueColHint:['sum(total_positive)','total_positive','value'],
+          movingAverage:true,
+          chartTitle: 'Positive Breath Tests Over Time (Line)'
+        });
+        setStatus('Line dataset loaded: ' + rows.length + ' rows');
+      }catch(e){ console.error(e); setStatus('Failed to load line dataset', true); }
+    }
+
+    // wire buttons (filenames URL-encoded if containing spaces)
+    btnBar.addEventListener('click', ()=> loadBar('data/BarChart%20Data%20Set.csv'));
+    btnPie.addEventListener('click', ()=> loadPie('data/Pie%20Chart%20Data%20Set.csv'));
+    btnLine.addEventListener('click', ()=> loadLine('data/Line%20Plot%20Data%20Set.csv'));
+
+    // file upload: try to detect which chart fits best by headers (simple heuristic)
+    csvFile.addEventListener('change', (ev)=>{
+      const f = ev.target.files && ev.target.files[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = (e)=>{
+        try{
+          const text = String(e.target.result || '');
+          const parsed = d3.csvParse(text);
+          renderTableFromRows(parsed);
+          setStatus('Local file loaded: ' + f.name);
+          const headers = Object.keys(parsed[0] || {}).map(h=>h.toLowerCase());
+          if(headers.some(h=>h.includes('year'))){
+            showOnly('line');
+            if(window.loadAndRenderLineChart) window.loadAndRenderLineChart(parsed, lineCtx, { dateColHint:['year','date'], valueColHint:['value','count'] });
+          } else if(headers.some(h=>h.includes('type') || h.includes('drug'))){
+            showOnly('pie');
+            if(window.loadAndRenderPieChart) window.loadAndRenderPieChart(parsed, pieCtx, { categoryColHint:['type','drug'], valueColHint:['count','value'] });
+          } else {
+            showOnly('bar');
+            if(window.loadAndRenderBarChart) window.loadAndRenderBarChart(parsed, barCtx, { labelColHint:['jurisdiction','category'], valueColHint:['count','value'] });
+          }
+        }catch(err){ console.error(err); setStatus('Failed to parse uploaded file', true); }
+      };
+      reader.onerror = ()=> setStatus('Failed to read file', true);
+      reader.readAsText(f);
+    });
+
+    // load default (Bar dataset) on open and show bar only
+    loadBar('data/BarChart%20Data%20Set.csv');
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+:root{
+  --bg:#f5f7fb;
+  --card:#ffffff;
+  --accent:#2b6cb0;
+  --muted:#6b7280;
+  --shadow: 0 6px 18px rgba(23,32,60,0.08);
+}
+
+*{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+
+body{
+  margin:0;
+  background:linear-gradient(180deg,#f7fbff 0%,var(--bg) 100%);
+  color:#0f172a;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+
+header{
+  width:100%;
+  padding:28px 16px 8px;
+  text-align:center;
+}
+header h1{
+  margin:0;
+  font-size:1.4rem;
+  font-weight:600;
+  color:var(--accent);
+}
+
+main{
+  width:100%;
+  max-width:960px;
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+  align-items:stretch;
+}
+
+/* controls */
+.controls-card{
+  background:var(--card);
+  padding:14px;
+  border-radius:10px;
+  box-shadow:var(--shadow);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.controls{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.file-label{
+  display:inline-flex;
+  gap:8px;
+  align-items:center;
+  background:#eef6ff;
+  color:var(--accent);
+  padding:8px 12px;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:600;
+  box-shadow:0 2px 6px rgba(43,108,176,0.08);
+}
+.file-label input[type="file"]{
+  display:none;
+}
+button, .file-label, a[download]{
+  transition:transform .08s ease, box-shadow .08s ease;
+}
+button{
+  background:var(--accent);
+  border:0;
+  color:white;
+  padding:8px 12px;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:600;
+  box-shadow:0 6px 14px rgba(43,108,176,0.12);
+}
+button:hover{transform:translateY(-1px);}
+
+/* chart card */
+.card{
+  background:var(--card);
+  padding:18px;
+  border-radius:12px;
+  box-shadow:var(--shadow);
+}
+.chart-section h2{
+  margin:0 0 12px 0;
+  font-size:1.05rem;
+  color:#0f172a;
+}
+canvas{
+  width:100% !important;
+  height:360px !important;
+}
+
+/* status text */
+.status{
+  margin-top:12px;
+  font-size:0.95rem;
+  color:var(--muted);
+}
+
+/* footer */
+footer{
+  margin:28px 0;
+  color:var(--muted);
+  font-size:0.85rem;
+}
+
+/* responsive tweaks */
+@media (max-width:560px){
+  canvas{height:300px !important;}
+  .controls{flex-direction:column;align-items:stretch;}
+  .file-label,button,a[download]{width:100%;text-align:center;}
+}
